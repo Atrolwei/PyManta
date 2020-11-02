@@ -105,7 +105,7 @@ class Pectoralfin:
             Fz+=fzPos+fzI
         Fx*=(self.fin_span_tip-self.fin_span_root)/Iter*self.d
         Fy*=(self.fin_span_tip-self.fin_span_root)/Iter*self.d
-        Fz*=(self.fin_span_tip-self.fin_span_root)/Iter*self.d
+        Fz*=-(self.fin_span_tip-self.fin_span_root)/Iter*self.d
 
         forceposiXrt=self.forceposi[0]
         forceposiYrt=self.forceposi[1]+sin(Aflap)*(self.fin_span_root+0.44*(self.fin_span_tip-self.fin_span_root))

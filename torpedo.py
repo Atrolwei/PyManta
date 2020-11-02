@@ -60,7 +60,7 @@ class torpedoforce:
     
     def Cx(self,alpha,beta):
         Cpoint=0.0052*2+0.0657*abs(alpha)
-        return Cpoint
+        return -Cpoint
 
     def Cy(self,alpha,beta):
         Cpoint=0.35*alpha
@@ -89,7 +89,7 @@ class torpedoforce:
     
     def tailrudderforce(self,u,V):
         dzl,dzr=u
-        assert abs(dzl)<pi and abs(dzr<pi),"尾鳍/舵控制信号输入应为弧度制"
+        assert abs(dzl)<pi and abs(dzr)<pi,"尾鳍/舵控制信号输入应为弧度制"
         dX_rudder=1/2*(1/2*self.rho*V**2*self.S_ref*self.dcx_dz*abs(dzl))+1/2*(1/2*self.rho*V**2*self.S_ref*self.dcx_dz*abs(dzr))
         dY_rudder=1/2*(1/2*self.rho*V**2*self.S_ref*self.dcy_dz*dzl)+1/2*(1/2*self.rho*V**2*self.S_ref*self.dcy_dz*dzr)
         dMz_rudder=1/2*(1/2*self.rho*V**2*self.S_ref*self.dmz_dz*dzl)+1/2*(1/2*self.rho*V**2*self.S_ref*self.dmz_dz*dzr)

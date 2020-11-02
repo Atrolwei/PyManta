@@ -30,11 +30,29 @@ class Manta:
 
         # Angle converter
         self.angleconverter=converter()
+
+        # Define the dimension of obs space and action space
+        self.dim_obs=18
+        self.dim_action=12
     
-    def reset(self,y0array):
+    def reset(self,y0array,desire):
         # Setting initial states
-        self.x0,self.y0,self.z0,self.vartheta0,self.psi0,self.gamma0,self.vx0,self.vy0,self.vz0,self.wx0,self.wy0,self.wz0=y0array
-        self.yn=np.array([self.x0,self.y0,self.z0,self.vartheta0,self.psi0,self.gamma0,self.vx0,self.vy0,self.vz0,self.wx0,self.wy0,self.wz0])
+        x0,y0,z0,vartheta0,psi0,gamma0,vx0,vy0,vz0,wx0,wy0,wz0=y0array
+        self.vartheta_c,self.psi_c,self.gamma_c,self.vx_c,self.vy_c,self.vz_c=desire
+        self.yn=np.array([x0,y0,z0,vartheta0,psi0,gamma0,vx0,vy0,vz0,wx0,wy0,wz0])
+        self.state=np.append(y0array,np.array([
+            self.vartheta_c-vartheta0,
+            self.psi_c-psi0,
+            self.gamma_c-gamma0,
+            self.vx_c-vx0,
+            self.vy_c-vy0,
+            self.vz_c-vz0
+        ]))
+
+        # 重置失稳和出界的标记
+        self.unstable=False
+        self.outscale=False
+        self.doneflag=False
 
         self.ynlist=[]
         self.alphalist=[]
@@ -44,7 +62,7 @@ class Manta:
         self.tn=0
     
     def __Manta6dof(self,t,y,controlU):
-        x, y, z, vartheta, psi, gamma, v_x, v_y, v_z, omega_x, omega_y, omega_z = y
+        x, y, z, vartheta, psi, gamma, v_x, v_y, v_z, omega_x, omega_y, omega_z= y
         #重浮力抵消
         mass=14.4
         Buyoncy=14.4*9.81
@@ -92,7 +110,7 @@ class Manta:
 
         # generate the sine signal and calculate force
         Fxl,Fyl,Fzl,Mxl,Myl,Mzl=self.Pec_l.calcforce([v_x_r,v_y_r],self.Pec_l.sinemovegene2(t,frez,Aflapl,Atwistl,dphil,Aflbiasl,Atwbiasl),[omega_x,omega_y,omega_z],0.01)
-        Fxr,Fyr,Fzr,Mxr,Myr,Mzr=self.Pec_r.calcforce([v_x_r,v_y_r],self.Pec_r.sinemovegene2(t,frez,Aflapl,Atwistl,dphir,Aflbiasl,Atwbiasl),[omega_x,omega_y,omega_z],0.01)
+        Fxr,Fyr,Fzr,Mxr,Myr,Mzr=self.Pec_r.calcforce([v_x_r,v_y_r],self.Pec_r.sinemovegene2(t,frez,Aflapr,Atwistr,dphir,Aflbiasr,Atwbiasr),[omega_x,omega_y,omega_z],0.01)
         Fxrudder,Fyrudder,Mzrudder=self.mantabody.tailrudderforce((dzl,dzr),V_r)
         T_x=Fxl+Fxr+Fxrudder
         T_y=Fyl+Fyr+Fyrudder
@@ -117,14 +135,43 @@ class Manta:
             -lambda_26*(lambda_11 + mass)*(Buyoncy*cos(gamma)*cos(vartheta) + F_y + T_y + lambda_35*omega_x*omega_y + mass*omega_x**2*y_G + mass*omega_z**2*y_G - 9.81*mass*cos(gamma)*cos(vartheta) + omega_x*v_z*(lambda_33 + mass) - omega_z*v_x*(lambda_11 + mass))/(-lambda_26**2*(lambda_11 + mass) + (lambda_22 + mass)*(-mass**2*y_G**2 + (lambda_11 + mass)*(lambda_66 + 0.1995))) + mass*y_G*(lambda_22 + mass)*(Buyoncy*sin(vartheta) + F_x + T_x + lambda_26*omega_z**2 - lambda_35*omega_y**2 - mass*omega_x*omega_y*y_G - 9.81*mass*sin(vartheta) - omega_y*v_z*(lambda_33 + mass) + omega_z*v_y*(lambda_22 + mass))/(-lambda_26**2*(lambda_11 + mass) + (lambda_22 + mass)*(-mass**2*y_G**2 + (lambda_11 + mass)*(lambda_66 + 0.1995))) + (lambda_11 + mass)*(lambda_22 + mass)*(M_z + T_mz + 9.81*mass*y_G*sin(vartheta) + omega_x*omega_y*(lambda_44 + 0.0574) - omega_x*omega_y*(lambda_55 + 0.2177) - omega_z*(lambda_26*v_x + mass*v_y*y_G) + v_x*v_y*(lambda_11 + mass) - v_x*v_y*(lambda_22 + mass) - v_z*(lambda_35*omega_x - mass*omega_y*y_G))/(-lambda_26**2*(lambda_11 + mass) + (lambda_22 + mass)*(-mass**2*y_G**2 + (lambda_11 + mass)*(lambda_66 + 0.1995)))]
         return np.array(res)
 
+    def calreward(self,yn):
+        # Reward计算时可以调用self.期望值以及当前航行状态yn计算
+        self.stepreward=0
+        return self.stepreward
+
+    def ifdone(self,yn):
+        x, y, z, vartheta, psi, gamma, vx, vy, vz, wx, wy, wz= yn
+        if np.abs(psi) > pi or np.abs(vartheta) > 100/180*pi or np.abs(gamma) > 0.4 or vx > 2 or vy>1:
+            # Unstable done
+            self.unstable=True
+            self.doneflag=True
+        if x < -10 or y > -0.01 or y < -20 or z < -5 or z > 5:
+            # Outscale done
+            self.outscale=True
+            self.doneglag=True
+        return self.doneflag
+
+
     def step(self,controlU,steptime):
         #预测校正法解微分方程
         self.h=steptime
         K1=self.__Manta6dof(self.tn,self.yn,controlU)
         self.yn=self.yn+self.h*K1
-        x, y, z, vartheta, psi, gamma, vx, vy, vz, wx, wy, wz = self.yn
+        x, y, z, vartheta, psi, gamma, vx, vy, vz, wx, wy, wz= self.yn
         self.ynlist.append([x,y,z,self.angleconverter.anglerange_rad(vartheta),self.angleconverter.anglerange_rad(psi),self.angleconverter.anglerange_rad(gamma),vx,vy,vz,wx,wy,wz])
         self.tn+=self.h
+        self.state=np.append(self.yn,np.array(
+            [   self.vartheta_c-vartheta,
+                self.psi_c-psi,
+                self.gamma_c-gamma,
+                self.vx_c-vx,
+                self.vy_c-vy,
+                self.vz_c-vz
+                ]))
+        reward=self.calreward(self.yn)
+        done=self.ifdone(self.yn)
+        return self.state,reward,done
     
     def render(self):
         #Plotting figures
@@ -185,12 +232,28 @@ class Manta:
 
 if __name__ == "__main__":
     env=Manta()
-    # x0,y0,z0,vartheta0,psi0,gamma0,vx0,vy0,vz0,wx0,wy0,wz0
-    env.reset([0,-5,0,0,0,0,0.1,0,0,0,0,0])
+    ''' 
+    状态量state设为 x,y,z,vartheta,psi,gamma,vx,vy,vz,wx,wy,wz,dvx,dvy,dvz,dvartheta,dpsi,dgamma
+    其中，x,y,z为航行器在惯性系下的三轴位置，x沿航行器纵轴指向头部，y沿航行器中纵剖面指向上，z轴按右手定则指向右
+    vartheta,psi,gamma分别为航行器欧拉角形式的姿态角，俯仰角、偏航角和滚动角
+    vx,vy,vz分别为航行器惯性系下三轴速度
+    wx,wy,wz分别为航行器体轴系下三轴角速度
+    dvx,dvy,dvz,dvartheta,dpsi,dgamma分别为航行器期望速度、期望姿态角与当前姿态角的差，state_c-state_now
+    '''
+    # 初始化航行器状态x,y,z,vartheta,psi,gamma,vx,vy,vz,wx,wy,wz,当从外部调用时，初始状态向量可随机生成
+    y0=[0,-5,0,0,0,0,0.1,0,0,0,0,0]
+    # 初始化期望vartheta_c,psi_c,gamma_c,vx_c,vy_c,vz_c,当从外部调用时，初始状态向量可随机生成或者根据航路解算得到
+    desire=[10/57.3,10/57.3,0,1,0,0]
+    done=False
+    env.reset(y0,desire)
     steptime=0.001
     tend=2
-    for i in range(int(tend/steptime)):
-        # Aflapl,Aflapr,Atwistl,Atwistr,Aflbiasl,Aflbiasr,Atwbiasl,Atwbiasr,dzl,dzr,dphil(左胸鳍扭摆相位差),dphir(右胸鳍扭摆相位差)
-        env.step([30/57.3,30/57.3,30/57.3,30/57.3,0,0,0,0,0,0,pi/2,pi/2],steptime=steptime)
+    if not done:
+        for i in range(int(tend/steptime)):
+            # Aflapl,Aflapr,Atwistl,Atwistr,Aflbiasl,Aflbiasr,Atwbiasl,Atwbiasr,dzl,dzr,dphil(左胸鳍扭摆相位差),dphir(右胸鳍扭摆相位差)
+            # 下方action直接给出了，实际应由智能体计算得到
+            action=[30/57.3,30/57.3,30/57.3,30/57.3,0,0,0,0,0,0,pi/2,pi/2]
+            state,reward,done=env.step(action,steptime=steptime)
+            print(state)
     env.render()
     

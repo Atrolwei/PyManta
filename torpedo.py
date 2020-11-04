@@ -92,7 +92,7 @@ class torpedoforce:
         assert abs(dzl)<pi and abs(dzr)<pi,"尾鳍/舵控制信号输入应为弧度制"
         dX_rudder=1/2*(1/2*self.rho*V**2*self.S_ref*self.dcx_dz*abs(dzl))+1/2*(1/2*self.rho*V**2*self.S_ref*self.dcx_dz*abs(dzr))
         dY_rudder=1/2*(1/2*self.rho*V**2*self.S_ref*self.dcy_dz*dzl)+1/2*(1/2*self.rho*V**2*self.S_ref*self.dcy_dz*dzr)
-        dMz_rudder=1/2*(1/2*self.rho*V**2*self.S_ref*self.dmz_dz*dzl)+1/2*(1/2*self.rho*V**2*self.S_ref*self.dmz_dz*dzr)
+        dMz_rudder=1/2*(1/2*self.rho*V**2*self.S_ref*self.L_ref*self.dmz_dz*dzl)+1/2*(1/2*self.rho*V**2*self.S_ref*self.L_ref*self.dmz_dz*dzr)
         return dX_rudder,dY_rudder,dMz_rudder
     
     

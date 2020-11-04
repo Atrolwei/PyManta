@@ -1,5 +1,5 @@
 import numpy as np
-from numpy import sin,cos,tan,sqrt,arcsin,arctan,pi
+from numpy import sin,cos,tan,sqrt,arcsin,arctan,pi,exp
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from torpedo import torpedoforce
@@ -52,6 +52,9 @@ class Manta:
         # 重置失稳和出界的标记
         self.unstable=False
         self.outscale=False
+
+        # 设置成功完成任务的标记
+        self.success=False
         self.doneflag=False
 
         self.ynlist=[]
@@ -135,10 +138,13 @@ class Manta:
             -lambda_26*(lambda_11 + mass)*(Buyoncy*cos(gamma)*cos(vartheta) + F_y + T_y + lambda_35*omega_x*omega_y + mass*omega_x**2*y_G + mass*omega_z**2*y_G - 9.81*mass*cos(gamma)*cos(vartheta) + omega_x*v_z*(lambda_33 + mass) - omega_z*v_x*(lambda_11 + mass))/(-lambda_26**2*(lambda_11 + mass) + (lambda_22 + mass)*(-mass**2*y_G**2 + (lambda_11 + mass)*(lambda_66 + 0.1995))) + mass*y_G*(lambda_22 + mass)*(Buyoncy*sin(vartheta) + F_x + T_x + lambda_26*omega_z**2 - lambda_35*omega_y**2 - mass*omega_x*omega_y*y_G - 9.81*mass*sin(vartheta) - omega_y*v_z*(lambda_33 + mass) + omega_z*v_y*(lambda_22 + mass))/(-lambda_26**2*(lambda_11 + mass) + (lambda_22 + mass)*(-mass**2*y_G**2 + (lambda_11 + mass)*(lambda_66 + 0.1995))) + (lambda_11 + mass)*(lambda_22 + mass)*(M_z + T_mz + 9.81*mass*y_G*sin(vartheta) + omega_x*omega_y*(lambda_44 + 0.0574) - omega_x*omega_y*(lambda_55 + 0.2177) - omega_z*(lambda_26*v_x + mass*v_y*y_G) + v_x*v_y*(lambda_11 + mass) - v_x*v_y*(lambda_22 + mass) - v_z*(lambda_35*omega_x - mass*omega_y*y_G))/(-lambda_26**2*(lambda_11 + mass) + (lambda_22 + mass)*(-mass**2*y_G**2 + (lambda_11 + mass)*(lambda_66 + 0.1995)))]
         return np.array(res)
 
-    def calreward(self,yn):
+    def calreward(self,state):
         # Reward计算时可以调用self.期望值以及当前航行状态yn计算
-        self.stepreward=0
-        return self.stepreward
+        a_vx,a_vy,a_vz=(5,0.1,0.5)
+        stepreward=a_vx/(abs(state[-3]/(self.vx_c+0.01))+0.01)+a_vy/(abs(state[-2]/(self.vy_c+0.01))+0.01)+a_vz/(abs(state[-1]/(self.vz_c+0.01))+0.01)
+        if stepreward>20000:
+            stepreward=20000
+        return stepreward
 
     def ifdone(self,yn):
         x, y, z, vartheta, psi, gamma, vx, vy, vz, wx, wy, wz= yn
@@ -150,6 +156,10 @@ class Manta:
             # Outscale done
             self.outscale=True
             self.doneglag=True
+        # 此处设计了按照实现期望三轴航行速度的结束条件
+        if (vx-self.vx_c)**2+(vy-self.vy_c)**2+(vz-self.vz_c)**2<0.1:
+            self.success=True
+            self.doneflag=True
         return self.doneflag
 
 
@@ -169,8 +179,10 @@ class Manta:
                 self.vy_c-vy,
                 self.vz_c-vz
                 ]))
-        reward=self.calreward(self.yn)
+        
         done=self.ifdone(self.yn)
+
+        reward=self.calreward(self.state)
         return self.state,reward,done
     
     def render(self):
@@ -254,6 +266,6 @@ if __name__ == "__main__":
             # 下方action直接给出了，实际应由智能体计算得到
             action=[30/57.3,30/57.3,30/57.3,30/57.3,0,0,0,0,0,0,pi/2,pi/2]
             state,reward,done=env.step(action,steptime=steptime)
-            print(state)
-    env.render()
+            print(reward)
+    # env.render()
     

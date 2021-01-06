@@ -14,7 +14,7 @@ class Manta:
         self.mantabody=torpedoforce(0.6645,0.6,1024)
         self.mantabody.setderiv(cy_wz=-0.15,cz_wy=0,mx_wx=-0.115,my_wy=-0.003,mz_wz=-0.018)
         self.mantabody.addtailrudder(dcx_dz=-0.0174,dcy_dz=0.0431,dmz_dz=-0.0122)
-        # Induce the 4 pectoral fins
+        # Induce the 2 pectoral fins
         self.finchord_tip=finchord_tip=0.068
         self.finchord_root=finchord_root=0.402
         self.finspan_tip=finspan_tip=0.41
@@ -63,9 +63,10 @@ class Manta:
         self.FMbodylist=[]
         self.TFMlist=[]
         self.tn=0
+        return self.state
     
-    def __Manta6dof(self,t,y,controlU):
-        x, y, z, vartheta, psi, gamma, v_x, v_y, v_z, omega_x, omega_y, omega_z= y
+    def __Manta6dof(self,t,y,controlU,steptime):
+        x, y, z, vartheta, psi, gamma, v_x, v_y, v_z, omega_x, omega_y, omega_z = y
         #重浮力抵消
         mass=14.4
         Buyoncy=14.4*9.81
@@ -112,8 +113,8 @@ class Manta:
         Aflapl,Aflapr,Atwistl,Atwistr,Aflbiasl,Aflbiasr,Atwbiasl,Atwbiasr,dzl,dzr,dphil,dphir=controlU
 
         # generate the sine signal and calculate force
-        Fxl,Fyl,Fzl,Mxl,Myl,Mzl=self.Pec_l.calcforce([v_x_r,v_y_r],self.Pec_l.sinemovegene2(t,frez,Aflapl,Atwistl,dphil,Aflbiasl,Atwbiasl),[omega_x,omega_y,omega_z],0.01)
-        Fxr,Fyr,Fzr,Mxr,Myr,Mzr=self.Pec_r.calcforce([v_x_r,v_y_r],self.Pec_r.sinemovegene2(t,frez,Aflapr,Atwistr,dphir,Aflbiasr,Atwbiasr),[omega_x,omega_y,omega_z],0.01)
+        Fxl,Fyl,Fzl,Mxl,Myl,Mzl=self.Pec_l.calcforce([v_x_r,v_y_r],self.Pec_l.sinemovegene2(t,frez,Aflapl,Atwistl,dphil,Aflbiasl,Atwbiasl),[omega_x,omega_y,omega_z],steptime)
+        Fxr,Fyr,Fzr,Mxr,Myr,Mzr=self.Pec_r.calcforce([v_x_r,v_y_r],self.Pec_r.sinemovegene2(t,frez,Aflapr,Atwistr,dphir,Aflbiasr,Atwbiasr),[omega_x,omega_y,omega_z],steptime)
         Fxrudder,Fyrudder,Mzrudder=self.mantabody.tailrudderforce((dzl,dzr),V_r)
         T_x=Fxl+Fxr+Fxrudder
         T_y=Fyl+Fyr+Fyrudder
@@ -140,6 +141,7 @@ class Manta:
 
     def calreward(self,state):
         # Reward计算时可以调用self.期望值以及当前航行状态yn计算
+        # 此处针对跟踪期望速度任务给出了一个临时的简单线性Step Reward函数，未经验证是否可用
         a_vx,a_vy,a_vz=(5,0.1,0.5)
         stepreward=a_vx/(abs(state[-3]/(self.vx_c+0.01))+0.01)+a_vy/(abs(state[-2]/(self.vy_c+0.01))+0.01)+a_vz/(abs(state[-1]/(self.vz_c+0.01))+0.01)
         if stepreward>20000:
@@ -164,15 +166,15 @@ class Manta:
 
 
     def step(self,controlU,steptime):
-        #预测校正法解微分方程
+        #欧拉法解微分方程
         self.h=steptime
-        K1=self.__Manta6dof(self.tn,self.yn,controlU)
+        K1=self.__Manta6dof(self.tn,self.yn,controlU,steptime)
         self.yn=self.yn+self.h*K1
         x, y, z, vartheta, psi, gamma, vx, vy, vz, wx, wy, wz= self.yn
         self.ynlist.append([x,y,z,self.angleconverter.anglerange_rad(vartheta),self.angleconverter.anglerange_rad(psi),self.angleconverter.anglerange_rad(gamma),vx,vy,vz,wx,wy,wz])
         self.tn+=self.h
         self.state=np.append(self.yn,np.array(
-            [   self.vartheta_c-vartheta,
+               [self.vartheta_c-vartheta,
                 self.psi_c-psi,
                 self.gamma_c-gamma,
                 self.vx_c-vx,
@@ -262,7 +264,15 @@ if __name__ == "__main__":
     tend=2
     if not done:
         for i in range(int(tend/steptime)):
-            # Aflapl,Aflapr,Atwistl,Atwistr,Aflbiasl,Aflbiasr,Atwbiasl,Atwbiasr,dzl,dzr,dphil(左胸鳍扭摆相位差),dphir(右胸鳍扭摆相位差)
+            '''
+            Action:
+            Aflapl(左胸鳍摆幅),Aflapr(右胸鳍摆幅),[0/57.3，30/57.3]
+            Atwistl(左胸鳍扭幅),Atwistr(右胸鳍扭幅),[0/57.3，30/57.3]
+            Aflbiasl(左胸鳍摆动偏置，向上为正),Aflbiasr(右胸鳍摆动偏置，向上为正),[-30/57.3，30/57.3]
+            Atwbiasl(左胸鳍扭转偏置，向上为正),Atwbiasr(右胸鳍扭转偏置，向上为正),[-30/57.3，30/57.3]
+            dzl(左尾鳍摆幅),dzr(右尾鳍摆幅),[-30/57.3，30/57.3]
+            dphil(左胸鳍扭摆相位差),dphir(右胸鳍扭摆相位差)，dphi=扭转初始相位-摆动初始相位[-180/57.3，180/57.3]
+            '''
             # 下方action直接给出了，实际应由智能体计算得到
             action=[30/57.3,30/57.3,30/57.3,30/57.3,0,0,0,0,0,0,pi/2,pi/2]
             state,reward,done=env.step(action,steptime=steptime)

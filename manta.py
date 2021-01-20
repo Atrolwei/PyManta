@@ -100,8 +100,31 @@ class Manta:
         V=sqrt(v_x**2+v_y**2+v_z**2)
         V_r=sqrt(v_x_r**2+v_y_r**2+v_z_r**2)
 
-        theta=arcsin(cos(alpha)*cos(beta)*sin(vartheta)-sin(alpha)*cos(beta)*cos(vartheta)*cos(gamma)-sin(beta)*cos(vartheta)*sin(gamma))
-        Psi=arcsin((cos(alpha)*cos(beta)*sin(psi)*cos(vartheta)+sin(alpha)*cos(beta)*sin(vartheta)*sin(psi)*cos(gamma)+sin(alpha)*cos(beta)*cos(psi)*sin(gamma)-sin(beta)*cos(psi)*cos(gamma)+sin(beta)*sin(vartheta)*sin(psi)*sin(gamma))/cos(theta))
+        '''
+        Change the calculating method for Psi and theta for the "out range of pi" reason.
+        '''
+
+        # theta=arcsin(cos(alpha)*cos(beta)*sin(vartheta)-sin(alpha)*cos(beta)*cos(vartheta)*cos(gamma)-sin(beta)*cos(vartheta)*sin(gamma))
+        # Psi=arcsin((cos(alpha)*cos(beta)*sin(psi)*cos(vartheta)+sin(alpha)*cos(beta)*sin(vartheta)*sin(psi)*cos(gamma)+sin(alpha)*cos(beta)*cos(psi)*sin(gamma)-sin(beta)*cos(psi)*cos(gamma)+sin(beta)*sin(vartheta)*sin(psi)*sin(gamma))/cos(theta))
+
+        v_x_e=cos(psi)*cos(vartheta)*v_x+(sin(gamma)*sin(psi) - sin(vartheta)*cos(gamma)*cos(psi))*v_y+(sin(gamma)*sin(vartheta)*cos(psi) + sin(psi)*cos(gamma))*v_z
+        v_y_e=sin(vartheta)*v_x+cos(gamma)*cos(vartheta)*v_y-sin(gamma)*cos(vartheta)*v_z
+        v_z_e=-sin(psi)*cos(vartheta)*v_x+(sin(gamma)*cos(psi)+sin(psi)*sin(vartheta)*cos(gamma))*v_y+(-sin(gamma)*sin(psi)*sin(vartheta) + cos(gamma)*cos(psi))*v_z
+
+        theta=arctan(v_y_e/sqrt(v_x_e**2+v_z_e**2))
+
+        if v_z_e!=0:
+            if v_x_e>0 :
+                Psi = arctan(-v_z_e/v_x_e)
+            elif v_x_e<0:
+                Psi = -pi*np.sign(v_z_e)+arctan(-v_z_e/v_x_e)
+            else:
+                Psi = -pi/2*np.sign(v_z_e)
+        else:
+            if v_x_e>= 0:
+                Psi = 0
+            else:
+                Psi = pi
 
         F_x,F_y,F_z,M_x,M_y,M_z=self.mantabody.waterforce(alpha_r,beta_r,omega_x,omega_y,omega_z,V_r)
         self.FMbodylist.append([F_x,F_y,F_z,M_x,M_y,M_z])
@@ -140,13 +163,13 @@ class Manta:
         return np.array(res)
 
     def calreward(self,state):
-        # Reward计算时可以调用self.期望值以及当前航行状态yn计算
-        # 此处针对跟踪期望速度任务给出了一个临时的简单线性Step Reward函数，未经验证是否可用
-        a_vx,a_vy,a_vz=(5,0.1,0.5)
-        stepreward=a_vx/(abs(state[-3]/(self.vx_c+0.01))+0.01)+a_vy/(abs(state[-2]/(self.vy_c+0.01))+0.01)+a_vz/(abs(state[-1]/(self.vz_c+0.01))+0.01)
-        if stepreward>20000:
-            stepreward=20000
-        return stepreward
+        # 计算直航
+        P_useful=0
+        P_unuseful=1
+
+
+
+        return P_useful/P_unuseful
 
     def ifdone(self,yn):
         x, y, z, vartheta, psi, gamma, vx, vy, vz, wx, wy, wz= yn
@@ -166,7 +189,7 @@ class Manta:
 
 
     def step(self,controlU,steptime):
-        #欧拉法解微分方程
+        # 欧拉法解微分方程
         self.h=steptime
         K1=self.__Manta6dof(self.tn,self.yn,controlU,steptime)
         self.yn=self.yn+self.h*K1
@@ -265,7 +288,7 @@ if __name__ == "__main__":
     if not done:
         for i in range(int(tend/steptime)):
             '''
-            Action:
+            action:
             Aflapl(左胸鳍摆幅),Aflapr(右胸鳍摆幅),[0/57.3，30/57.3]
             Atwistl(左胸鳍扭幅),Atwistr(右胸鳍扭幅),[0/57.3，30/57.3]
             Aflbiasl(左胸鳍摆动偏置，向上为正),Aflbiasr(右胸鳍摆动偏置，向上为正),[-30/57.3，30/57.3]

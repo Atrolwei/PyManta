@@ -1,13 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Wed May 20 09:24:09 2020
-
-@author: weixufei
-"""
 import numpy as np
-import pandas as pd
-from scipy import interpolate
-from scipy.interpolate import griddata
 from math import pi
 
 

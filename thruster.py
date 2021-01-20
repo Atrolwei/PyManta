@@ -1,43 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Wed May 20 10:08:10 2020
-
-@author: weixufei
-"""
 import numpy as np
 from math import pi,sin,cos,tan,atan,sqrt
-from matplotlib import pyplot as plt
 from patterngenerator import sinegenerator
 
-class Propeller:
-    def __init__(self):
-        self.thrusternum=0
-        self.thrustermaxforce=[]
-        self.thrusterposi=[]
-        self.thrustertowards=[]
-        
-    def addthruster(self,maxforce,posi,towards):
-        self.thrusterID=self.thrusternum
-        self.thrusternum+=1
-        self.thrustermaxforce.append([])
-        self.thrustermaxforce[self.thrusterID]=maxforce*np.array(towards)
-        self.thrusterposi.append([])
-        self.thrusterposi[self.thrusterID]=posi
-        self.thrustertowards.append([])
-        self.thrustertowards[self.thrusterID]=towards
-    
-    def calcforce(self,u):
-        assert len(u)==self.thrusternum,"请输入匹配推进器数量的控制参数"
-        thrustforcecontrol=np.zeros([self.thrusternum,3])
-        torqueforcecontrol=np.zeros([self.thrusternum,3])
-        for i in range(self.thrusternum):
-            thrustforcecontrol[i,:]=u[i]*self.thrustermaxforce[i]
-            torqueforcecontrol[i,:]=np.cross(np.array(self.thrusterposi[i]),thrustforcecontrol[i,:])
-        forceaddmatrix=np.ones([1,self.thrusternum])
-        linearforce=forceaddmatrix@thrustforcecontrol
-        torqueforce=forceaddmatrix@torqueforcecontrol
-        return np.concatenate((np.squeeze(linearforce),np.squeeze(torqueforce)))
-    
+
 class Pectoralfin:
     '''
     Define:
@@ -55,8 +21,6 @@ class Pectoralfin:
         self.C1,self.C2,self.C3,self.C4=Cs
         self.d=d
         self.vy_piece_old=np.zeros(self.Iter)
-        self.Aflrtlist=[]
-        self.Atwrtlist=[]
 
     def getforceposi(self,posi,towards):
         # Note: the following calculation can only satisfies the horizontal instances now!
@@ -139,109 +103,3 @@ class Pectoralfin:
         fyI=(fyIi*cos(Atwist_piece)+fxIi*sin(Atwist_piece))*cos(Aflap)*self.towards[1]
         fzI=(fyIi*cos(Atwist_piece)+fxIi*sin(Atwist_piece))*sin(Aflap)*self.towards[2]
         return fxI,fyI,fzI
-    
-    def sinemovegene2(self,t,frez,Aflap,Atwist,dphi,Aflbias,Atwbias):
-        flapsine=sinegenerator()
-        twistsine=sinegenerator()
-        Aflap_rt,dAflap_rt=flapsine.getsine(t,Aflap-abs(Aflbias),frez,0,Aflbias)
-        Atwist_rt,dAtwist_rt=twistsine.getsine(t,Atwist-abs(Atwbias),frez,dphi,Atwbias)
-        self.Aflrtlist.append(Aflap_rt)
-        self.Atwrtlist.append(Atwist_rt)
-        return frez,Aflap_rt,dAflap_rt,Atwist_rt,dAtwist_rt
-
-    def selfcheck(self):
-        plt.figure()
-        plt.plot(np.array(self.Aflrtlist)*57.3,'r-',np.array(self.Atwrtlist)*57.3,'g--')
-        plt.plot(np.ones_like(self.Aflrtlist)*np.array(self.Aflrtlist).mean(),'r.',np.ones_like(self.Atwrtlist)*np.array(self.Atwrtlist).mean(),'g.')
-
-
-if __name__=='__main__':
-    finchord_tip=0.3
-    finchord_root=1.27
-    finspan_tip=1.42
-    finspan_root=0.27
-    Lfront=4
-    Lbehind=7
-    Lmass=4.269
-    Pec_lf=Pectoralfin([Lmass-Lfront-0.5*finspan_root,0,-0.77],[1,1,-1],[finchord_root,finchord_root,0.247],[finspan_root,finspan_tip,0.44],120,(2.477,2.6029,-0.0896,0.01),1.08)
-    Pec_rf=Pectoralfin([Lmass-Lfront-0.5*finspan_root,0,0.77],[1,1,1],[finchord_root,finchord_root,0.247],[finspan_root,finspan_tip,0.44],120,(2.477,2.6029,-0.0896,0.01),1.08)
-    Pec_lb=Pectoralfin([Lmass-Lbehind-0.5*finspan_root,0,-0.77],[1,1,-1],[finchord_root,finchord_root,0.247],[finspan_root,finspan_tip,0.44],120,(2.477,2.6029,-0.0896,0.01),1.08)
-    Pec_rb=Pectoralfin([Lmass-Lbehind-0.5*finspan_root,0,0.77],[1,1,1],[finchord_root,finchord_root,0.247],[finspan_root,finspan_tip,0.44],120,(2.477,2.6029,-0.0896,0.01),1.08)
-
-    frez=0.56
-    dphi=pi/2
-
-    Aflaplf=30/57.3
-    Aflaprf=30/57.3
-    Aflaplb=30/57.3
-    Aflaprb=30/57.3
-
-    Atwistlf=45/57.3      
-    Atwistrf=45/57.3
-    Atwistlb=45/57.3
-    Atwistrb=45/57.3
-
-    Aflbiaslf=0
-    Aflbiasrf=0
-    Aflbiaslb=0/57.3
-    Aflbiasrb=0/57.3
-
-    Atwbiaslf=0/57.3
-    Atwbiasrf=0/57.3
-    Atwbiaslb=0/57.3
-    Atwbiasrb=0/57.3
-
-    omega_x=0
-    omega_y=0
-    omega_z=0
-
-    v_x_r=2.5
-    v_y_r=0
-
-    T_xlist=T_ylist=T_zlist=T_mxlist=T_mylist=T_mzlist=[]
-    T_xmeanlist=T_ymeanlist=T_zmeanlist=T_mxmeanlist=T_mymeanlist=T_mzmeanlist=[]
-    tend=1/frez*10
-    for dflap in range(2):
-        print(dflap)
-        Aflaplf=dflap
-        Aflaprf=30-dflap
-        for t in np.linspace(0,tend,tend*100+1):
-            # generate the sine signal and calculate force
-            Fxlf,Fylf,Fzlf,Mxlf,Mylf,Mzlf=Pec_lf.calcforce([v_x_r,v_y_r],Pec_lf.sinemovegene2(t,frez,Aflaplf,Atwistlf,dphi,Aflbiaslf,Atwbiaslf),[omega_x,omega_y,omega_z],0.01)
-            # Fxlb,Fylb,Fzlb,Mxlb,Mylb,Mzlb=Pec_lb.calcforce([v_x_r,v_y_r],Pec_lb.sinemovegene2(t,frez,Aflaplb,Atwistlb,dphi,Aflbiaslb,Atwbiaslb),[omega_x,omega_y,omega_z],0.01)
-            Fxrf,Fyrf,Fzrf,Mxrf,Myrf,Mzrf=Pec_rf.calcforce([v_x_r,v_y_r],Pec_rf.sinemovegene2(t,frez,Aflaprf,Atwistrf,dphi,Aflbiasrf,Atwbiasrf),[omega_x,omega_y,omega_z],0.01)
-            # Fxrb,Fyrb,Fzrb,Mxrb,Myrb,Mzrb=Pec_rb.calcforce([v_x_r,v_y_r],Pec_rb.sinemovegene2(t,frez,Aflaprb,Atwistrb,dphi,Aflbiasrb,Atwbiasrb),[omega_x,omega_y,omega_z],0.01)
-            
-            # T_x=Fxlf+Fxlb+Fxrf+Fxrb
-            # T_y=Fylf+Fylb+Fyrf+Fyrb
-            # T_z=Fzlf+Fzlb+Fzrf+Fzrb
-            # T_mx=Mxlf+Mxlb+Mxrf+Mxrb
-            # T_my=Mylf+Mylb+Myrf+Myrb
-            # T_mz=Mzlf+Mzlb+Mzrf+Mzrb
-            T_x=Fxlf+Fxrf
-            T_y=Fylf+Fyrf
-            T_z=Fzlf+Fzrf
-            T_mx=Mxlf+Mxrf
-            T_my=Mylf+Myrf
-            T_mz=Mzlf+Mzrf
-
-            T_xlist.append(T_x)
-            T_ylist.append(T_y)
-            T_zlist.append(T_z)
-            T_mxlist.append(T_mx)
-            T_mylist.append(T_my)
-            T_mzlist.append(T_mz)
-        T_xmeanlist.append(np.mean(T_xlist))
-        T_ymeanlist.append(np.mean(T_ylist))
-        T_zmeanlist.append(np.mean(T_zlist))
-        T_mxmeanlist.append(np.mean(T_mxlist))
-        T_mymeanlist.append(np.mean(T_mylist))
-        T_mzmeanlist.append(np.mean(T_mzlist))
-    fig,ax=plt.subplots(6,1,figsize=(15,7))
-    ax[0].plot(T_xmeanlist)
-    ax[1].plot(T_ymeanlist)
-    ax[2].plot(T_zmeanlist)
-    ax[3].plot(T_mxmeanlist)
-    ax[4].plot(T_mymeanlist)
-    ax[5].plot(T_mzmeanlist)
-    plt.show()

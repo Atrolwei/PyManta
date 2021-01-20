@@ -1,11 +1,11 @@
 import numpy as np
 from numpy import sin,cos,tan,sqrt,arcsin,arctan,pi,exp
 import matplotlib.pyplot as plt
-from scipy.integrate import solve_ivp
 from torpedo import torpedoforce
 from thruster import Pectoralfin
 from disturbance import waterdisturb
 from utils import converter
+from patterngenerator import sinegenerator
 
 
 class Manta:
@@ -35,19 +35,11 @@ class Manta:
         self.dim_obs=18
         self.dim_action=12
     
-    def reset(self,y0array,desire):
+    def reset(self,y0array):
         # Setting initial states
         x0,y0,z0,vartheta0,psi0,gamma0,vx0,vy0,vz0,wx0,wy0,wz0=y0array
-        self.vartheta_c,self.psi_c,self.gamma_c,self.vx_c,self.vy_c,self.vz_c=desire
-        self.yn=np.array([x0,y0,z0,vartheta0,psi0,gamma0,vx0,vy0,vz0,wx0,wy0,wz0])
-        self.state=np.append(y0array,np.array([
-            self.vartheta_c-vartheta0,
-            self.psi_c-psi0,
-            self.gamma_c-gamma0,
-            self.vx_c-vx0,
-            self.vy_c-vy0,
-            self.vz_c-vz0
-        ]))
+        
+        self.yn=np.array(y0array)
 
         # 重置失稳和出界的标记
         self.unstable=False
@@ -63,9 +55,16 @@ class Manta:
         self.FMbodylist=[]
         self.TFMlist=[]
         self.tn=0
-        return self.state
-    
-    def __Manta6dof(self,t,y,controlU,steptime):
+        # data to calculate the efficiency(Tx,u,Mx,thetai)==> 7 variables
+        self.stepWlist=[]
+        return self.yn
+
+    def calc_stepW(self,Tx,v_x,Mx_abs,dAflap_abs,steptime):
+        stepW_useful=Tx*v_x*steptime
+        stepW_total=Mx_abs*dAflap_abs*steptime
+        return stepW_useful,stepW_total
+
+    def __Manta6dof(self,t,y,finmoves,steptime):
         x, y, z, vartheta, psi, gamma, v_x, v_y, v_z, omega_x, omega_y, omega_z = y
         #重浮力抵消
         mass=14.4
@@ -103,7 +102,6 @@ class Manta:
         '''
         Change the calculating method for Psi and theta for the "out range of pi" reason.
         '''
-
         # theta=arcsin(cos(alpha)*cos(beta)*sin(vartheta)-sin(alpha)*cos(beta)*cos(vartheta)*cos(gamma)-sin(beta)*cos(vartheta)*sin(gamma))
         # Psi=arcsin((cos(alpha)*cos(beta)*sin(psi)*cos(vartheta)+sin(alpha)*cos(beta)*sin(vartheta)*sin(psi)*cos(gamma)+sin(alpha)*cos(beta)*cos(psi)*sin(gamma)-sin(beta)*cos(psi)*cos(gamma)+sin(beta)*sin(vartheta)*sin(psi)*sin(gamma))/cos(theta))
 
@@ -129,15 +127,15 @@ class Manta:
         F_x,F_y,F_z,M_x,M_y,M_z=self.mantabody.waterforce(alpha_r,beta_r,omega_x,omega_y,omega_z,V_r)
         self.FMbodylist.append([F_x,F_y,F_z,M_x,M_y,M_z])
 
-        # calculate the movement 
-        frez=0.6
-        dphi=pi/2
+        # finfrez,Aflap,dAflap,Atwist,dAtwist=finmove
+        finmove_l=finmoves[0:5]
+        finmove_r=finmoves[5:10]
 
-        Aflapl,Aflapr,Atwistl,Atwistr,Aflbiasl,Aflbiasr,Atwbiasl,Atwbiasr,dzl,dzr,dphil,dphir=controlU
+        dzl,dzr=finmoves[10],finmoves[11]
 
         # generate the sine signal and calculate force
-        Fxl,Fyl,Fzl,Mxl,Myl,Mzl=self.Pec_l.calcforce([v_x_r,v_y_r],self.Pec_l.sinemovegene2(t,frez,Aflapl,Atwistl,dphil,Aflbiasl,Atwbiasl),[omega_x,omega_y,omega_z],steptime)
-        Fxr,Fyr,Fzr,Mxr,Myr,Mzr=self.Pec_r.calcforce([v_x_r,v_y_r],self.Pec_r.sinemovegene2(t,frez,Aflapr,Atwistr,dphir,Aflbiasr,Atwbiasr),[omega_x,omega_y,omega_z],steptime)
+        Fxl,Fyl,Fzl,Mxl,Myl,Mzl=self.Pec_l.calcforce([v_x_r,v_y_r],finmove_l,[omega_x,omega_y,omega_z],steptime)
+        Fxr,Fyr,Fzr,Mxr,Myr,Mzr=self.Pec_r.calcforce([v_x_r,v_y_r],finmove_r,[omega_x,omega_y,omega_z],steptime)
         Fxrudder,Fyrudder,Mzrudder=self.mantabody.tailrudderforce((dzl,dzr),V_r)
         T_x=Fxl+Fxr+Fxrudder
         T_y=Fyl+Fyr+Fyrudder
@@ -147,6 +145,11 @@ class Manta:
         T_mz=Mzl+Mzr+Mzrudder
 
         self.TFMlist.append([T_x,T_y,T_z,T_mx,T_my,T_mz])
+
+        # Calculate the step efficiency and save them into stepWlist both for left and right
+        self.stepWlist.append([
+            self.calc_stepW(Fxl,v_x,abs(Mxl),abs(finmove_l[2]),steptime),
+            self.calc_stepW(Fxr,v_x,abs(Mxr),abs(finmove_r[2]),steptime)])
 
         res=[V*cos(theta)*cos(Psi),
             V*sin(theta),
@@ -162,14 +165,13 @@ class Manta:
             -lambda_26*(lambda_11 + mass)*(Buyoncy*cos(gamma)*cos(vartheta) + F_y + T_y + lambda_35*omega_x*omega_y + mass*omega_x**2*y_G + mass*omega_z**2*y_G - 9.81*mass*cos(gamma)*cos(vartheta) + omega_x*v_z*(lambda_33 + mass) - omega_z*v_x*(lambda_11 + mass))/(-lambda_26**2*(lambda_11 + mass) + (lambda_22 + mass)*(-mass**2*y_G**2 + (lambda_11 + mass)*(lambda_66 + 0.1995))) + mass*y_G*(lambda_22 + mass)*(Buyoncy*sin(vartheta) + F_x + T_x + lambda_26*omega_z**2 - lambda_35*omega_y**2 - mass*omega_x*omega_y*y_G - 9.81*mass*sin(vartheta) - omega_y*v_z*(lambda_33 + mass) + omega_z*v_y*(lambda_22 + mass))/(-lambda_26**2*(lambda_11 + mass) + (lambda_22 + mass)*(-mass**2*y_G**2 + (lambda_11 + mass)*(lambda_66 + 0.1995))) + (lambda_11 + mass)*(lambda_22 + mass)*(M_z + T_mz + 9.81*mass*y_G*sin(vartheta) + omega_x*omega_y*(lambda_44 + 0.0574) - omega_x*omega_y*(lambda_55 + 0.2177) - omega_z*(lambda_26*v_x + mass*v_y*y_G) + v_x*v_y*(lambda_11 + mass) - v_x*v_y*(lambda_22 + mass) - v_z*(lambda_35*omega_x - mass*omega_y*y_G))/(-lambda_26**2*(lambda_11 + mass) + (lambda_22 + mass)*(-mass**2*y_G**2 + (lambda_11 + mass)*(lambda_66 + 0.1995)))]
         return np.array(res)
 
-    def calreward(self,state):
-        # 计算直航
-        P_useful=0
-        P_unuseful=1
-
-
-
-        return P_useful/P_unuseful
+    def calreward(self,stepW):
+        # 由胸鳍单步的功或积分多个周期的功计算效率，并考虑航行器状态计算总的Reward
+        stepW_l,stepW_r=stepW
+        stepefficiency=stepW_l[0]/stepW_l[1]+stepW_r[0]/stepW_r[1]
+        # print(stepefficiency)
+        reward=stepefficiency+self.yn[0]+abs(self.yn[6])
+        return reward
 
     def ifdone(self,yn):
         x, y, z, vartheta, psi, gamma, vx, vy, vz, wx, wy, wz= yn
@@ -181,34 +183,26 @@ class Manta:
             # Outscale done
             self.outscale=True
             self.doneglag=True
-        # 此处设计了按照实现期望三轴航行速度的结束条件
-        if (vx-self.vx_c)**2+(vy-self.vy_c)**2+(vz-self.vz_c)**2<0.1:
+        # 若航行距离超过20米则完成本轮，结束条件
+        if x>=20:
             self.success=True
             self.doneflag=True
         return self.doneflag
 
 
-    def step(self,controlU,steptime):
+    def step(self,finmoves,steptime):
         # 欧拉法解微分方程
         self.h=steptime
-        K1=self.__Manta6dof(self.tn,self.yn,controlU,steptime)
+        K1=self.__Manta6dof(self.tn,self.yn,finmoves,steptime)
         self.yn=self.yn+self.h*K1
         x, y, z, vartheta, psi, gamma, vx, vy, vz, wx, wy, wz= self.yn
         self.ynlist.append([x,y,z,self.angleconverter.anglerange_rad(vartheta),self.angleconverter.anglerange_rad(psi),self.angleconverter.anglerange_rad(gamma),vx,vy,vz,wx,wy,wz])
         self.tn+=self.h
-        self.state=np.append(self.yn,np.array(
-               [self.vartheta_c-vartheta,
-                self.psi_c-psi,
-                self.gamma_c-gamma,
-                self.vx_c-vx,
-                self.vy_c-vy,
-                self.vz_c-vz
-                ]))
         
         done=self.ifdone(self.yn)
 
-        reward=self.calreward(self.state)
-        return self.state,reward,done
+        reward=self.calreward(self.stepWlist[-1])
+        return self.yn,reward,done
     
     def render(self):
         #Plotting figures
@@ -267,38 +261,60 @@ class Manta:
         axes[8].set_ylabel('M(N·m)')
         plt.show()
 
+def sinemovegene(t,frez,Aflap,Atwist,dphi,Aflbias,Atwbias):
+    flapsine=sinegenerator()
+    twistsine=sinegenerator()
+    Aflap_rt,dAflap_rt=flapsine.getsine(t,Aflap-abs(Aflbias),frez,0,Aflbias)
+    Atwist_rt,dAtwist_rt=twistsine.getsine(t,Atwist-abs(Atwbias),frez,dphi,Atwbias)
+    return frez,Aflap_rt,dAflap_rt,Atwist_rt,dAtwist_rt
+
 if __name__ == "__main__":
     env=Manta()
     ''' 
-    状态量state设为 x,y,z,vartheta,psi,gamma,vx,vy,vz,wx,wy,wz,dvx,dvy,dvz,dvartheta,dpsi,dgamma
+    状态量state设为 x,y,z,vartheta,psi,gamma,vx,vy,vz,wx,wy,wz
     其中，x,y,z为航行器在惯性系下的三轴位置，x沿航行器纵轴指向头部，y沿航行器中纵剖面指向上，z轴按右手定则指向右
     vartheta,psi,gamma分别为航行器欧拉角形式的姿态角，俯仰角、偏航角和滚动角
     vx,vy,vz分别为航行器惯性系下三轴速度
     wx,wy,wz分别为航行器体轴系下三轴角速度
-    dvx,dvy,dvz,dvartheta,dpsi,dgamma分别为航行器期望速度、期望姿态角与当前姿态角的差，state_c-state_now
     '''
     # 初始化航行器状态x,y,z,vartheta,psi,gamma,vx,vy,vz,wx,wy,wz,当从外部调用时，初始状态向量可随机生成
     y0=[0,-5,0,0,0,0,0.1,0,0,0,0,0]
-    # 初始化期望vartheta_c,psi_c,gamma_c,vx_c,vy_c,vz_c,当从外部调用时，初始状态向量可随机生成或者根据航路解算得到
-    desire=[10/57.3,10/57.3,0,1,0,0]
+
     done=False
-    env.reset(y0,desire)
+    env.reset(y0)
     steptime=0.001
     tend=2
+
     if not done:
-        for i in range(int(tend/steptime)):
+        for idx, t in enumerate(np.linspace(0,tend,int(tend/steptime)+1)):         
             '''
-            action:
-            Aflapl(左胸鳍摆幅),Aflapr(右胸鳍摆幅),[0/57.3，30/57.3]
-            Atwistl(左胸鳍扭幅),Atwistr(右胸鳍扭幅),[0/57.3，30/57.3]
-            Aflbiasl(左胸鳍摆动偏置，向上为正),Aflbiasr(右胸鳍摆动偏置，向上为正),[-30/57.3，30/57.3]
-            Atwbiasl(左胸鳍扭转偏置，向上为正),Atwbiasr(右胸鳍扭转偏置，向上为正),[-30/57.3，30/57.3]
-            dzl(左尾鳍摆幅),dzr(右尾鳍摆幅),[-30/57.3，30/57.3]
-            dphil(左胸鳍扭摆相位差),dphir(右胸鳍扭摆相位差)，dphi=扭转初始相位-摆动初始相位[-180/57.3，180/57.3]
+            下方action假设由正弦给出了，实际应由智能体计算得到
+
+            def sinemovegene(t,frez,Aflap,Atwist,dphi,Aflbias,Atwbias)
+                t：当前时间;
+                frez：胸鳍频率，[0，0.7]（Hz），此处设左右胸鳍频率相同且摆扭同频;
+                Aflap：胸鳍摆幅，[0/57.3，30/57.3]（rad）
+                Atwist：胸鳍扭幅，[0/57.3，30/57.3]（rad）
+                dphi：胸鳍扭摆相位差，dphi=扭转初始相位-摆动初始相位[-180/57.3，180/57.3]（rad）
+                Aflbias：胸鳍摆动偏置，向上为正，[-30/57.3，30/57.3]（rad）
+                Atwbias：胸鳍扭转偏置，向上为正，[-30/57.3，30/57.3]（rad）
+
+            tailmove=(dzl,dzr)
+                dzl为左尾鳍摆幅，dzr为右尾鳍摆幅，[-30/57.3，30/57.3]（rad）
             '''
-            # 下方action直接给出了，实际应由智能体计算得到
-            action=[30/57.3,30/57.3,30/57.3,30/57.3,0,0,0,0,0,0,pi/2,pi/2]
+            frez=0.6
+            leftmove=sinemovegene(t,frez,30/57.3,30/57.3,pi/2,0,0)
+            rightmove=sinemovegene(t,frez,30/57.3,30/57.3,pi/2,0,0)
+            tailmove=(0,0)
+
+            action=leftmove+rightmove+tailmove
+
             state,reward,done=env.step(action,steptime=steptime)
-            print(reward)
-    # env.render()
+            print('time is {} and reward is {}\n'.format(t,reward))
+    env.render()
+
+
+
+
+
     

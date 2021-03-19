@@ -7,7 +7,7 @@ from manta import Manta
 CTRL_CYCLE_TAIL = 0.1  # 每0.1s进行一次尾鳍控制
 CTRL_CYCLE_PEC = 1  # 每1s进行一次胸鳍控制
 STEPTIME = 0.001  # 解算步长1ms
-T_END = 10        # 每Episode总时长15s
+T_END = 15        # 每Episode总时长15s
 
 
 def get_action(t, state, action_old):
@@ -73,7 +73,8 @@ if __name__ == "__main__":
     if not done:
         for t in np.linspace(0, T_END, 1000*T_END+1):
             action = get_action(t, state, action_old)
-            state, reward, done = env.step(action, steptime=STEPTIME)
+            state, reward, done, info = env.step(action, steptime=STEPTIME)
             action_old = action
-            print('time is {} and reward is {}\n'.format(t, reward))
-    # env.render()
+            # print('time is {} and reward is {}\n'.format(t, reward))
+            print('The fish is {} and the reward is {}'.format(info,reward))
+    env.render()

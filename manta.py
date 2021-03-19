@@ -6,7 +6,7 @@ from thruster import Pectoralfin
 from disturbance import waterdisturb
 from utils import anglerange_rad
 from patterngenerator import getsine
-
+from sea import Sea
 
 def sinemove(t, frez, Aflap, Atwist, dphi, Aflbias, Atwbias):
     Aflap_rt, dAflap_rt = getsine(t, Aflap-abs(Aflbias), frez, 0, Aflbias)
@@ -35,45 +35,42 @@ class Manta:
         self._Pec_r = Pectoralfin([Lmass-Lfront-0.5*finspan_root, 0, 90e-3], [1, 1, 1], [finchord_root,
                                   finchord_tip, 0.1], [finspan_root, finspan_tip, 0.44], 120, (2.81, 2.8, -0.019, 0.0201), 1)
 
+        # Initial sea enviroment
+        self.sea=Sea()
+
         # Add Water Disturbance
         self._steawaterdisturb = waterdisturb()
-        self._steawaterdisturb.setdisturbonground(0, -30/57.3, 0)
 
         # Define the dimension of obs space and action space
-        self.dim_obs = 18
+        self.dim_obs = 12
         self.dim_action = 13
 
-    def setdisturbonground(self, V_disturb, Psi, Theta):
-        self._steawaterdisturb.setdisturbonground(V_disturb, Psi, Theta)
+    def setdisturbonground(self, VN_w, VY_w, VE_w):
+        self._steawaterdisturb.setdisturbonground(VN_w, VY_w, VE_w)
 
     def reset(self, state0=[0, -5, 0, 0, 0, 0, 0.01, 0, 0, 0, 0, 0], tend=10):
         # Setting initial states
         # x,y,z,vartheta,psi,gamma,vx,vy,vz,wx,wy,wz=state0,当从外部调用时，初始状态向量可随机生成并赋值给state0
+        x,y,z,vartheta,psi,gamma,vx,vy,vz,wx,wy,wz=state0
 
         self.yn = np.array(state0)
+        self.tn = 0
 
-        # 重置失稳和出界的标记
-        self.unstable = False
-        self.outscale = False
-
-        # 设置成功完成任务的标记
-        self.tend = tend
-        self.success = False
-        self.doneflag = False
-
+        # Plotting figures
         self.ynlist = []
         self.alphalist = []
         self.betalist = []
         self.FMbodylist = []
         self.TFMlist = []
-        self.tn = 0
+        
         # 用于记录每一步的速度
         self.ulist = []
-        # 用于记录每一步的功，data to calculate the efficiency(Tx,u,Mx,thetai)==> 7 variables
+        # 用于记录每一步的功
         self.Wlist = []
 
-        # Debug
-        self.dzlist=[]
+        self.sea.make_random_sea(z,x)
+        VN_w, VY_w, VE_w=self.sea.get_water_disturbance(z,x)
+        self.setdisturbonground(VN_w, VY_w, VE_w)
         return self.yn
 
     def calc_stepW(self, v_x, Mxl, Mxr, dAflapl, dAflapr):
@@ -81,8 +78,8 @@ class Manta:
         stepW = (abs(Mxl*dAflapl)+abs(Mxr*dAflapr))*self.h
         self.Wlist.append(stepW)
 
-    def __Manta6dof(self, t, y, action, steptime):
-        _, y, _, vartheta, psi, gamma, v_x, v_y, v_z, omega_x, omega_y, omega_z = y
+    def __Manta6dof(self, t, state, action, steptime):
+        x, y, z, vartheta, psi, gamma, v_x, v_y, v_z, omega_x, omega_y, omega_z = state
         # 重浮力抵消
         mass = 14.4
         Buyoncy = 14.4*9.81
@@ -96,6 +93,8 @@ class Manta:
         lambda_26 = -0.84  # =lambda_62
         lambda_35 = 0.175  # =lambda_53
 
+        VN_w, VY_w, VE_w=self.sea.get_water_disturbance(z,x)
+        self.setdisturbonground(VN_w, VY_w, VE_w)
         vwb_x, vwb_y, vwb_z = self._steawaterdisturb.steadydisturb(
             psi, vartheta, gamma)
         v_x_r = v_x-vwb_x
@@ -148,9 +147,6 @@ class Manta:
         finmove_r = sinemove(t, frez, Aflap_r, Atwist_r,
                              dphi_r, Aflbias_r, Atwbias_r)
 
-        # Debug
-        self.dzlist.append(dzl)
-
         # calculate force
         Fxl, Fyl, Fzl, Mxl, Myl, Mzl = self._Pec_l.calcforce(
             [v_x_r, v_y_r], finmove_l, [omega_x, omega_y, omega_z], steptime)
@@ -195,19 +191,28 @@ class Manta:
 
     def ifdone(self, yn):
         x, y, z, vartheta, psi, gamma, vx, vy, vz, _, _, _ = yn
-        if np.abs(psi) > pi or np.abs(vartheta) > 100/180*pi or np.abs(gamma) > 25/57.3 or vx > 2 or vy > 1:
-            # Unstable done
-            self.unstable = True
-            self.doneflag = True
-        if x < -10 or y > -0.01 or y < -20 or z < -5 or z > 5:
-            # Outscale done
-            self.outscale = True
-            self.doneglag = True
-        # Target reached done
-        if self.tn >= self.tend:
-            self.success = True
-            self.doneflag = True
-        return self.doneflag
+        dis_to_target=sqrt((z-self.sea.X_RANGE[1])**2+(x-self.sea.Y_RANGE[1]))
+        vel_total=sqrt(vx**2+vy**2+vz**2)
+        # 到达目标点
+        if dis_to_target<1:
+            done=True
+            info='Target arrived'
+        # 出界
+        elif z<self.sea.X_RANGE[0]-5 or z>self.sea.X_RANGE[1]+5 or x<self.sea.Y_RANGE[0]-5 or x>self.sea.Y_RANGE[1]+5:
+            done=True
+            info='Outscale'
+        # 碰撞
+        elif self.sea.iscollision(z,x):
+            done=True
+            info='Collided'
+        # 失稳
+        elif self.sea.isunbalance(vel_total,vartheta,gamma):
+            done=True
+            info='Unbalanced'
+        else:
+            done=False
+            info='Still swimming'
+        return done,info
 
     def step(self, action, steptime):
         # 欧拉法解微分方程
@@ -219,10 +224,10 @@ class Manta:
             psi), anglerange_rad(gamma), vx, vy, vz, wx, wy, wz])
         self.tn += self.h
 
-        done = self.ifdone(self.yn)
+        done,info = self.ifdone(self.yn)
 
         reward = self.calreward()
-        return self.yn, reward, done
+        return self.yn, reward, done,info
 
     def render(self):
         # Plotting figures
@@ -255,8 +260,7 @@ class Manta:
         axes[2].set_xlabel('t(s)')
         axes[2].set_ylabel('totalV(m/s)')
         axes[3].plot(t_eval, np.array(self.alphalist)*57.3, 'g--',
-                     t_eval, np.array(varthetalist)*57.3, 'r-',
-                     t_eval,np.array(self.dzlist)*57.3,'b')
+                     t_eval, np.array(varthetalist)*57.3, 'r-')
         axes[3].set_title("alpha(deg)/pitch(deg)")
         axes[3].legend(['alpha', 'pitch'])
         axes[3].set_xlabel('t(s)')

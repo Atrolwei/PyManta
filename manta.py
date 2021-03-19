@@ -249,8 +249,7 @@ class Manta:
         axes[2].set_xlabel('t(s)')
         axes[2].set_ylabel('totalV(m/s)')
         axes[3].plot(t_eval, np.array(self.alphalist)*57.3, 'g--',
-                     t_eval, np.array(varthetalist)*57.3, 'r-',
-                     t_eval,np.array(self.dzlist)*57.3,'b')
+                     t_eval, np.array(varthetalist)*57.3, 'r-')
         axes[3].set_title("alpha(deg)/pitch(deg)")
         axes[3].legend(['alpha', 'pitch'])
         axes[3].set_xlabel('t(s)')

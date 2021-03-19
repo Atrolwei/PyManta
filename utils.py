@@ -1,19 +1,17 @@
-import numpy as np 
+from math import pi
 
-class converter:
-    def __init__(self):
-        pass
 
-    def anglerange_deg(self,sumangle):
-        if sumangle>180:
-            sumangle-=360
-        elif sumangle<=-180:
-            sumangle+=360
-        return sumangle
+def anglerange_deg(angle):
+    if angle > 180:
+        angle -= 360
+    elif angle <= -180:
+        angle += 360
+    return angle
 
-    def anglerange_rad(self,sumangle):
-        if sumangle>np.pi:
-            sumangle-=2*np.pi
-        elif sumangle<=-np.pi:
-            sumangle+=2*np.pi
-        return sumangle
+
+def anglerange_rad(angle):
+    if angle > pi:
+        angle -= 2*pi
+    elif angle <= -pi:
+        angle += 2*pi
+    return angle

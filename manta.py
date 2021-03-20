@@ -69,8 +69,6 @@ class Manta:
         self.Wlist = []
 
         self.sea.make_random_sea(z,x)
-        VN_w, VY_w, VE_w=self.sea.get_water_disturbance(z,x)
-        self.setdisturbonground(VN_w, VY_w, VE_w)
         return self.yn
 
     def calc_stepW(self, v_x, Mxl, Mxr, dAflapl, dAflapr):
@@ -250,10 +248,14 @@ class Manta:
         axes[0].set_title('X-Y Trace')
         axes[0].set_xlabel('X(m)')
         axes[0].set_ylabel('Y(m)')
-        axes[1].plot(xlist, zlist)
-        axes[1].set_title('X-Z Trace')
-        axes[1].set_xlabel('X(m)')
-        axes[1].set_ylabel('Z(m)')
+        # axes[1].plot(xlist, zlist)
+        # axes[1].set_title('X-Z Trace')
+        # axes[1].set_xlabel('X(m)')
+        # axes[1].set_ylabel('Z(m)')
+        axes[1].plot(zlist, xlist)
+        axes[1].set_title('Z-X Trace')
+        axes[1].set_xlabel('Z(m)')
+        axes[1].set_ylabel('X(m)')
         axes[2].plot(t_eval, np.sqrt(np.array(vxlist)**2 +
                      np.array(vylist)**2+np.array(vzlist)**2))
         axes[2].set_title("total velocity")

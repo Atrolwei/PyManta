@@ -1,9 +1,7 @@
-from os import XATTR_SIZE_MAX
 import random
-from math import atan, pi,sin,cos,sqrt,acos
+from math import atan, pi,sin,cos,sqrt
 import numpy as np 
 
-from matplotlib.pyplot import thetagrids
 
 class Sea:
     def __init__(self):

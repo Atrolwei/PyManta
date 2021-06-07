@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from torpedo import torpedoforce
 from thruster import Pectoralfin
 from disturbance import waterdisturb
+from delayer import Delayer
 from utils import anglerange_rad
 from patterngenerator import getsine
 from sea import Sea
@@ -37,6 +38,14 @@ class Manta:
 
         # Initial sea enviroment
         self.sea=Sea()
+		
+        # simulate the delays of the motors
+        self.dl_lflap=Delayer(0.05)
+        self.dl_rflap=Delayer(0.05)
+        self.dl_ltwist=Delayer(0.05)
+        self.dl_rtwist=Delayer(0.05)
+        self.dl_ltail=Delayer(0.01)
+        self.dl_rtail=Delayer(0.01)
 
         # Add Water Disturbance
         self._steawaterdisturb = waterdisturb()
@@ -76,6 +85,22 @@ class Manta:
         stepW = (abs(Mxl*dAflapl)+abs(Mxr*dAflapr))*self.h
         self.Wlist.append(stepW)
 
+    def move_delay(self,finmove_l,finmove_r,dzl,dzr,steptime=0.001):
+        frez, Aflap_rt, _, Atwist_rt, _=finmove_l
+        Aflap_rt,dAflap_rt=self.dl_lflap.run(Aflap_rt,steptime)
+        Atwist_rt,dAtwist_rt=self.dl_ltwist.run(Atwist_rt,steptime)
+        finmove_l=frez, Aflap_rt, dAflap_rt, Atwist_rt, dAtwist_rt
+
+        frez, Aflap_rt, _, Atwist_rt, _=finmove_r
+        Aflap_rt,dAflap_rt=self.dl_rflap.run(Aflap_rt,steptime)
+        Atwist_rt,dAtwist_rt=self.dl_rtwist.run(Atwist_rt,steptime)
+        finmove_r=frez, Aflap_rt, dAflap_rt, Atwist_rt, dAtwist_rt
+
+        dzl,_=self.dl_ltail.run(dzl,steptime)
+        dzr,_=self.dl_rtail.run(dzr,steptime)
+        # self.dldebuger.append(Aflap_rt)
+        return finmove_l,finmove_r,dzl,dzr
+        
     def __Manta6dof(self, t, state, action, steptime):
         x, y, z, vartheta, psi, gamma, v_x, v_y, v_z, omega_x, omega_y, omega_z = state
         # 重浮力抵消
@@ -144,7 +169,8 @@ class Manta:
                              dphi_l, Aflbias_l, Atwbias_l)
         finmove_r = sinemove(t, frez, Aflap_r, Atwist_r,
                              dphi_r, Aflbias_r, Atwbias_r)
-
+        finmove_l,finmove_r,dzl,dzr=self.move_delay(finmove_l,finmove_r,dzl,dzr,steptime)
+        
         # calculate force
         Fxl, Fyl, Fzl, Mxl, Myl, Mzl = self._Pec_l.calcforce(
             [v_x_r, v_y_r], finmove_l, [omega_x, omega_y, omega_z], steptime)

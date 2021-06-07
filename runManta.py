@@ -7,7 +7,7 @@ from manta import Manta
 CTRL_CYCLE_TAIL = 0.1  # 每0.1s进行一次尾鳍控制
 CTRL_CYCLE_PEC = 1  # 每1s进行一次胸鳍控制
 STEPTIME = 0.001  # 解算步长1ms
-T_END = 10        # 每Episode总时长15s
+T_END = 10        # 每Episode总时长10s
 
 
 def get_action(t, state, action_old):

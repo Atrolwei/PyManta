@@ -4,6 +4,10 @@ class Delayer:
         self.output=0
         self.T=T 
 
+    def _reset(self):
+        self.input=0
+        self.output=0
+        
     def run(self,input,h):
         output_dot=(input-self.output)/self.T
         self.output+=h*output_dot

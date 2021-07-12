@@ -81,6 +81,15 @@ class Manta:
         self.ulist = []
         # 用于记录每一步的功，data to calculate the efficiency(Tx,u,Mx,thetai)==> 7 variables
         self.Wlist = []
+
+        self._Pec_l._reset()
+        self._Pec_r._reset()
+        self.dl_lflap._reset()
+        self.dl_rflap._reset()
+        self.dl_ltwist._reset()
+        self.dl_rtwist._reset()
+        self.dl_ltail._reset()
+        self.dl_rtail._reset()
         return self.yn
 
     def calc_stepW(self, v_x, Mxl, Mxr, dAflapl, dAflapr):
@@ -212,7 +221,11 @@ class Manta:
     def calreward(self):
         v_x_ave = np.average(np.array(self.ulist))
         W_ave = np.sum(np.array(self.Wlist))/self.tn
-        return v_x_ave/W_ave
+        if W_ave==0:
+            reward=0
+        else:
+            reward=v_x_ave/W_ave
+        return reward
 
     def ifdone(self, yn):
         x, y, z, vartheta, psi, gamma, vx, vy, vz, _, _, _ = yn
@@ -230,7 +243,7 @@ class Manta:
             self.doneflag = True
         return self.doneflag
 
-    def step(self, action, steptime):
+    def step(self, action, steptime=0.001):
         # 欧拉法解微分方程
         self.h = steptime
         K1 = self.__Manta6dof(self.tn, self.yn, action, steptime)

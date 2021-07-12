@@ -21,6 +21,9 @@ class Pectoralfin:
         self.C1, self.C2, self.C3, self.C4 = Cs
         self.d = d
         self.vy_piece_old = np.zeros(Iter)
+    
+    def _reset(self):
+        self.vy_piece_old=np.zeros(self.Iter)
 
     def getforceposi(self, posi, towards):
         # Note: the following calculation can only satisfies the horizontal instances now!
